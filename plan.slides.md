@@ -14,6 +14,8 @@
 
 ### Единый сценарий
 
+---
+
 #### Сценарий простейший
 
 ```lua
@@ -216,6 +218,17 @@ impl<'lua, L> LuaRead<L> for HashMap<AnyHashableLuaValue, AnyLuaValue>
         let index = index - 1;
         let mut result = HashMap::new();
 
+        // { next slide }
+
+        Ok(result)
+    }
+}
+
+```
+
+---
+
+```rust
         loop {
             if unsafe { ffi::lua_next(me.as_mut_lua().0, index) } == 0 {
                 break;
@@ -241,11 +254,6 @@ impl<'lua, L> LuaRead<L> for HashMap<AnyHashableLuaValue, AnyLuaValue>
 
             result.insert(key, value);
         }
-
-        Ok(result)
-    }
-}
-
 ```
 
 ---
@@ -361,12 +369,7 @@ fn init_machines<'a>(
     machines: Arc<Mutex<HashMap<usize, Machine>>>,
 ) {
     let new = {
-        let machines = machines.clone();
-        move |config: HashMap<_, _>, config_inner: HashMap<_, _>| {
-            let machine = Machine::new(config, config_inner);
-            let handle = machine.new_handle(&mut *machines.lock().unwrap());
-            MachineLua::new(handle)
-        }
+        // ...
     };
     let reset_and_run = {
         let machines = machines.clone();
@@ -375,24 +378,6 @@ fn init_machines<'a>(
             let mut machines = machines.lock().unwrap();
             let machine = &mut machines.get_mut(&handle).unwrap();
             machine.reset_and_run(image_path)
-        }
-    };
-    let power_down = {
-        let machines = machines.clone();
-        move |machine_lua: &mut MachineLua| {
-            let handle = machine_lua.handle();
-            let mut machines = machines.lock().unwrap();
-            let machine = &mut machines.get_mut(&handle).unwrap();
-            machine.power_down()
-        }
-    };
-    let read_line = {
-        let machines = machines.clone();
-        move |machine_lua: &mut MachineLua| {
-            let handle = machine_lua.handle();
-            let mut machines = machines.lock().unwrap();
-            let machine = machines.get_mut(&handle).unwrap();
-            machine.read_line()
         }
     };
     let drop = {
@@ -404,10 +389,7 @@ fn init_machines<'a>(
     };
 
     machine.set("new", hlua::function2(new));
-    machine.set("reset_and_run", hlua::function2(reset_and_run));
-    machine.set("power_down", hlua::function1(power_down));
-    machine.set("read_line", hlua::function1(read_line));
-    machine.set("drop", hlua::function1(drop));
+    // ...
 }
 ```
 
@@ -421,54 +403,11 @@ impl Machine {
         config: HashMap<hlua::AnyHashableLuaValue, hlua::AnyLuaValue>,
         config_inner: HashMap<hlua::AnyHashableLuaValue, hlua::AnyLuaValue>,
     ) -> Machine {
-        info!("config: {:?}", config);
-        info!("config_inner: {:?}", config_inner);
-
         let ty = &config[&hlua::AnyHashableLuaValue::LuaString("type".to_owned())];
         match ty {
             &hlua::AnyLuaValue::LuaString(ref s) => match s.as_ref() {
                 "hw" => {
-                    let serial_port_name = &config_inner
-                        [&hlua::AnyHashableLuaValue::LuaString("serial_port_name".to_owned())];
-                    let serial_port_name = match serial_port_name {
-                        &hlua::AnyLuaValue::LuaString(ref s) => s.clone(),
-                        _ => panic!("No serial port name for Hw machine config"),
-                    };
-                    let serial_port_config = &config_inner
-                        [&hlua::AnyHashableLuaValue::LuaString("serial_port_config".to_owned())];
-                    let serial_port_config = match serial_port_config {
-                        &hlua::AnyLuaValue::LuaString(ref s) => s.clone(),
-                        _ => panic!("No serial port config for Hw machine config"),
-                    };
-
-                    let power_management = &config_inner
-                        [&hlua::AnyHashableLuaValue::LuaString("power_management".to_owned())];
-                    let power_management = match power_management {
-                        &hlua::AnyLuaValue::LuaString(ref s) => s.clone(),
-                        _ => panic!("No power management setting for Hw machine config"),
-                    };
-
-                    let power_management_config = if power_management == "auto" {
-                        let t = &config_inner
-                            [&hlua::AnyHashableLuaValue::LuaString("pdu_host_name".to_owned())];
-                        let pdu_host_name = match t {
-                            &hlua::AnyLuaValue::LuaString(ref s) => s.clone(),
-                            _ => panic!("No power management setting for Hw machine config"),
-                        };
-
-                        let t = &config_inner
-                            [&hlua::AnyHashableLuaValue::LuaString("outlet_number".to_owned())];
-                        let outlet_number = match t {
-                            &hlua::AnyLuaValue::LuaNumber(n) => n,
-                            _ => panic!("No power management setting for Hw machine config"),
-                        };
-                        PowerManagement::Auto(
-                            PduHostName(pdu_host_name),
-                            OutletNumber(outlet_number as u8),
-                        )
-                    } else {
-                        PowerManagement::Manual
-                    };
+                    // ...
 
                     Machine {
                         internals: Internals::Hw(HwInternals {
@@ -480,12 +419,8 @@ impl Machine {
                     }
                 }
                 "qemu" => {
-                    let command_line = &config_inner
-                        [&hlua::AnyHashableLuaValue::LuaString("command_line".to_owned())];
-                    let command_line = match command_line {
-                        &hlua::AnyLuaValue::LuaString(ref s) => s,
-                        _ => panic!("No command line for Qemu machine config"),
-                    };
+                    // ...
+
                     Machine {
                         internals: Internals::Qemu(QemuInternals {
                             command_line: command_line.clone(),
@@ -493,9 +428,7 @@ impl Machine {
                         }),
                     }
                 }
-                _ => unreachable!(),
             },
-            _ => unreachable!(),
         }
     }
 ```
@@ -516,9 +449,28 @@ impl Drop for Qemu {
         self.process.kill().unwrap();
     }
 }
+```
 
+---
+
+```rust
 impl Qemu {
     pub fn new(command: &str) -> Self {
+        // next slide
+    }
+    pub fn read_line(&mut self) -> Option<String> {
+        let result = self.output_queue.try_recv();
+        match result {
+            Ok(s) => Some(s.trim().to_owned()),
+            Err(_) => None,
+        }
+    }
+}
+```
+
+---
+
+```rust
         let args: Vec<_> = command.split(' ').collect();
         let command = args[0];
         let mut to_be_child = Command::new(command);
@@ -550,16 +502,11 @@ impl Qemu {
             _reader_thread: thread,
             output_queue: output_queue_rx,
         }
-    }
-    pub fn read_line(&mut self) -> Option<String> {
-        let result = self.output_queue.try_recv();
-        match result {
-            Ok(s) => Some(s.trim().to_owned()),
-            Err(_) => None,
-        }
-    }
-}
+```
 
+---
+
+```rust
 pub struct QemuLua {
     handle: usize,
 }
@@ -597,6 +544,24 @@ function Machine.new(config)
 
     local get_output =
         function()
+        -- next slide
+    end
+
+    local power_down = function()
+        core.machine.power_down(self.inner)
+    end
+
+    return {
+        reset_and_run = reset_and_run,
+        get_output = get_output,
+        power_down = power_down
+    }
+end
+```
+
+---
+
+```lua
         if not self.output then
             self.output = {}
             self.output.mt = {
@@ -618,23 +583,28 @@ function Machine.new(config)
             setmetatable(self.output, self.output.mt)
         end
         return self.output
-    end
-
-    local power_down = function()
-        core.machine.power_down(self.inner)
-    end
-
-    return {
-        reset_and_run = reset_and_run,
-        get_output = get_output,
-        power_down = power_down
-    }
-end
 ```
 
 ---
 
 ### `wait_for_line`
+
+```lua
+function wait_for_line(source, expected_line, timeout, time_step)
+    local status, err, ret = xpcall(wait_for_line_panicking, debug.traceback, source, expected_line, timeout, time_step)
+
+    if not status then
+        print(err)
+        global_result = "fail"
+    end
+
+    return ret
+end
+```
+
+---
+
+### `wait_for_line_panicking`
 
 ```lua
 function wait_for_line_panicking(source, expected_line, timeout, time_step)
@@ -655,17 +625,6 @@ function wait_for_line_panicking(source, expected_line, timeout, time_step)
     end
 
     assert(result ~= "timeout", string.format("did not get '%s' in %d seconds", expected_line, timeout))
-end
-
-function wait_for_line(source, expected_line, timeout, time_step)
-    local status, err, ret = xpcall(wait_for_line_panicking, debug.traceback, source, expected_line, timeout, time_step)
-
-    if not status then
-        print(err)
-        global_result = "fail"
-    end
-
-    return ret
 end
 ```
 
