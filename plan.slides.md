@@ -207,6 +207,10 @@ MACHINE_CONFIG = {
 
 ### hlua
 
+---
+
+#### Пример кода (1)
+
 ```rust
 impl<'lua, L> LuaRead<L> for HashMap<AnyHashableLuaValue, AnyLuaValue>
     where L: AsMutLua<'lua>
@@ -227,6 +231,8 @@ impl<'lua, L> LuaRead<L> for HashMap<AnyHashableLuaValue, AnyLuaValue>
 ```
 
 ---
+
+#### Пример кода (2)
 
 ```rust
         loop {
@@ -437,6 +443,10 @@ impl Machine {
 
 ### Qemu
 
+---
+
+#### Структура и Drop
+
 ```rust
 pub struct Qemu {
     process: Child,
@@ -452,6 +462,8 @@ impl Drop for Qemu {
 ```
 
 ---
+
+#### Методы
 
 ```rust
 impl Qemu {
@@ -469,6 +481,8 @@ impl Qemu {
 ```
 
 ---
+
+#### Qemu::new
 
 ```rust
         let args: Vec<_> = command.split(' ').collect();
@@ -505,6 +519,8 @@ impl Qemu {
 ```
 
 ---
+
+### QemuLua
 
 ```rust
 pub struct QemuLua {
@@ -560,6 +576,8 @@ end
 ```
 
 ---
+
+#### get_output
 
 ```lua
         if not self.output then
@@ -781,6 +799,10 @@ method.
 - ???
 - NodeLua на Rust
 - PROFIT!
+
+---
+
+# Спасибо
 
 ---
 
