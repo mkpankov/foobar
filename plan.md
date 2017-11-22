@@ -10,6 +10,105 @@
 
 ### Единый сценарий
 
+#### Сценарий простейший
+
+```lua
+require "fixture"
+require "lib"
+
+function build()
+    print "build"
+    assert(
+        os.execute(
+            string.format(
+                "cp -r %s/src %s/build && cd %s/build && make qemu-image",
+                global_script_dir,
+                global_workspace_dir,
+                global_workspace_dir
+            )
+        )
+    )
+
+    return string.format("%s/build/qemu-image", global_workspace_dir)
+end
+
+function test()
+    print "test"
+    output:expect_line("Hello world!", 2)
+    pass()
+end
+```
+
+#### Сценарий с сервером
+
+```lua
+require "lib"
+
+function unreliable_setup()
+    print "unreliable_setup"
+
+    output_with_tag("CHECK", "Checking if log contains boot message...")
+    output:wait_for_line("[BOOT] Starting ...", 20)
+end
+
+function setup()
+    print "setup"
+
+    server = Process.new(string.format("%s/build/host/server/server", global_workspace_dir))
+    server.run()
+end
+
+function teardown()
+    print "teardown"
+
+    server = nil
+    collectgarbage()
+end
+
+-- ...
+
+function test()
+    print "test"
+    server_output = server:get_output()
+
+    output:expect_line("Client sent: perform read write operations ...", 5)
+    server_output:expect_line("Server received: perform read write operations ...", 1)
+    pass()
+end
+
+set_test_head()
+
+```
+
+#### Конфигурация машины
+
+##### Qemu
+
+```lua
+MACHINE_CONFIG = {
+    type = "qemu",
+    inner = {
+        command_line = "/opt/toolchain/bin/qemu-system-x86_64 -m 1024 -cpu core2duo -serial stdio -kernel {kernel_image}"
+    }
+}
+```
+
+##### Физическая
+
+```lua
+MACHINE_CONFIG = {
+    type = "hw",
+    inner = {
+        serial_port_name = string.format("tests/scenarios/%s/reference_output", global_test_name),
+        -- serial_port_name = "/dev/ttyUSB0",
+        serial_port_config = "0:4:18b2:a30:3:1c:7f:15:4:0:1:0:11:13:1a:0:12:f:17:16:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0",
+        power_management = "manual"
+        -- pdu_host_name = "pdu.example.com"
+        -- outlet_number = 6
+    }
+}
+```
+
 ### Надёжное управление ресурсами
 
 #### Жизненный цикл машин
@@ -151,6 +250,8 @@ pub unsafe fn lua_newtable(L: *mut lua_State) {
 ```
 
 ## Что может hlua
+
+https://github.com/tomaka/hlua#reading-and-writing-variables
 
 ### Чтение и запись переменных
 
