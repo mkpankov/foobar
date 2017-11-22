@@ -642,6 +642,15 @@ The behavior of the standard library can be regained with the Child::forget
 method.
 ```
 
+### Грабли Tokio в мире Lua
+
+- Event loop Tokio существует только на стороне Rust. Lua не имеет к нему доступа.
+- Физически поток управления уходит в Lua, и оттуда он не выйдет по событиям поллинга Tokio.
+- Нужна виртуальная машина Lua с поддержкой Tokio
+- ???
+- NodeLua на Rust
+- PROFIT!
+
 ## Backup
 
 ### Метаметоды Lua
