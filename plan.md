@@ -422,6 +422,226 @@ implement_lua_push!(QemuLua, |_| {});
 implement_lua_read!(QemuLua);
 ```
 
+### machine.lua
+
+```lua
+inspect = require("inspect")
+
+Machine = {config = nil, output = nil, status = nil, inner = nil}
+
+function Machine.new(config)
+    local inner = core.machine.new(config, config.inner)
+    local self = {config = config, output = nil, status = "unknown", inner = inner}
+
+    local reset_and_run = function(image_path)
+        core.machine.reset_and_run(self.inner, image_path)
+        return self.inner
+    end
+
+    local get_output =
+        function()
+        if not self.output then
+            self.output = {}
+            self.output.mt = {
+                __index = {
+                    read_line = function()
+                        return core.machine.read_line(self.inner)
+                    end,
+                    wait_for_line = function(self, l, t, s)
+                        return wait_for_line(self, l, t, s)
+                    end,
+                    expect_line = function(self, l, t, s)
+                        return expect_line(self, l, t, s)
+                    end,
+                    assert_line = function(self, l, t, s)
+                        return assert_line(self, l, t, s)
+                    end
+                }
+            }
+            setmetatable(self.output, self.output.mt)
+        end
+        return self.output
+    end
+
+    local power_down = function()
+        core.machine.power_down(self.inner)
+    end
+
+    return {
+        reset_and_run = reset_and_run,
+        get_output = get_output,
+        power_down = power_down
+    }
+end
+```
+
+### `wait_for_line`
+
+```lua
+function wait_for_line_panicking(source, expected_line, timeout, time_step)
+    time_step = time_step or 0.1
+    local result = "timeout"
+    local spent_time = 0
+
+    while spent_time < timeout do
+        local line = source:read_line()
+        if line == expected_line then
+            result = "received"
+            break
+        end
+        -- FIXME: line:len() check wasn't needed previously
+        if not line or line:len() == 0 then
+            core.sleep(0, time_step * 1000)
+            spent_time = spent_time + time_step
+        end
+    end
+
+    assert(result ~= "timeout", string.format("did not get '%s' in %d seconds", expected_line, timeout))
+end
+
+function wait_for_line(source, expected_line, timeout, time_step)
+    local status, err, ret = xpcall(wait_for_line_panicking, debug.traceback, source, expected_line, timeout, time_step)
+
+    if not status then
+        print(err)
+        global_result = "fail"
+    end
+
+    return ret
+end
+```
+
+## tokio-process & tokio-serial
+
+```rust
+impl AsyncRead for Serial {
+    unsafe fn prepare_uninitialized_buffer(&self, buf: &mut [u8]) -> bool;
+    fn read_buf<B>(&mut self, buf: &mut B) -> Result<Async<usize>, Error> where
+        B: BufMut, ;
+    fn framed<T>(self, codec: T) -> Framed<Self, T> where
+        Self: AsyncWrite,
+        T: Decoder + Encoder, ;
+    fn split(self) -> (ReadHalf<Self>, WriteHalf<Self>) where
+        Self: AsyncWrite, ;
+}
+
+impl AsyncWrite for Serial {
+    fn shutdown(&mut self) -> Poll<(), Error>;
+    fn write_buf<B>(&mut self, buf: &mut B) -> Result<Async<usize>, Error> where
+        B: Buf, ;
+}
+```
+
+### tokio-process
+
+#### Примеры
+
+##### Запуск процесса с асинхронным IO
+
+```rust
+extern crate futures;
+extern crate tokio_core;
+extern crate tokio_process;
+
+use std::process::Command;
+
+use futures::Future;
+use tokio_core::reactor::Core;
+use tokio_process::CommandExt;
+
+fn main() {
+    // Create our own local event loop
+    let mut core = Core::new().unwrap();
+
+    // Use the standard library's `Command` type to build a process and
+    // then execute it via the `CommandExt` trait.
+    let child = Command::new("echo").arg("hello").arg("world")
+                        .spawn_async(&core.handle());
+
+    // Make sure our child succeeded in spawning
+    let child = child.expect("failed to spawn");
+
+    match core.run(child) {
+        Ok(status) => println!("exit status: {}", status),
+        Err(e) => panic!("failed to wait for exit: {}", e),
+    }
+}
+```
+
+##### Захват вывода
+
+```rust
+extern crate futures;
+extern crate tokio_core;
+extern crate tokio_process;
+
+use std::process::Command;
+
+use futures::Future;
+use tokio_core::reactor::Core;
+use tokio_process::CommandExt;
+
+fn main() {
+    let mut core = Core::new().unwrap();
+
+    // Like above, but use `output_async` which returns a future instead of
+    // immediately returning the `Child`.
+    let output = Command::new("echo").arg("hello").arg("world")
+                        .output_async(&core.handle());
+    let output = core.run(output).expect("failed to collect output");
+
+    assert!(output.status.success());
+    assert_eq!(output.stdout, b"hello world\n");
+}
+```
+
+##### Чтение по строкам
+
+```rust
+extern crate futures;
+extern crate tokio_core;
+extern crate tokio_process;
+extern crate tokio_io;
+
+use std::io;
+use std::process::{Command, Stdio, ExitStatus};
+
+use futures::{BoxFuture, Future, Stream};
+use tokio_core::reactor::Core;
+use tokio_process::{CommandExt, Child};
+
+fn print_lines(mut cat: Child) -> BoxFuture<ExitStatus, io::Error> {
+    let stdout = cat.stdout().take().unwrap();
+    let reader = io::BufReader::new(stdout);
+    let lines = tokio_io::io::lines(reader);
+    let cycle = lines.for_each(|l| {
+        println!("Line: {}", l);
+        Ok(())
+    });
+    cycle.join(cat).map(|((), s)| s).boxed()
+}
+
+fn main() {
+    let mut core = Core::new().unwrap();
+    let mut cmd = Command::new("cat");
+    let mut cat = cmd.stdout(Stdio::piped());
+    let child = cat.spawn_async(&core.handle()).unwrap();
+    core.run(print_lines(child)).unwrap();
+}
+```
+
+#### Подводные грабли
+
+```
+While similar to the standard library, this crate's Child type differs
+importantly in the behavior of drop. In the standard library, a child process
+will continue running after the instance of std::process::Child is dropped. In
+this crate, however, because tokio_process::Child is a future of the child's
+ExitStatus, a child process is terminated if tokio_process::Child is dropped.
+The behavior of the standard library can be regained with the Child::forget
+method.
+```
+
 ## Backup
 
 ### Метаметоды Lua
